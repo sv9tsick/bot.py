@@ -241,7 +241,13 @@ async def fetch_news(analyzer: SmartNewsAnalyzer) -> list[dict]:
                 if published < cutoff:
                     continue
 
-                all_items.append({ ... })
+                all_items.append({
+                    "source": src_name,
+                    "title": entry.get("title", "") or "",
+                    "link": entry.get("link", ""),
+                    "published": published,
+                    "summary": entry.get("summary", ""),
+                })
         except Exception as e:
             print(f"Ошибка парсинга {src_name}: {e}")
 
@@ -373,6 +379,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
