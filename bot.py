@@ -11,6 +11,13 @@ import hashlib
 from datetime import datetime, timedelta
 import asyncio
 import re
+def escape_markdown(text: str) -> str:
+    """
+    Простейшая экранировка символов MarkdownV2.
+    """
+    for ch in "_*[]()~`>#+-=|{}.!":
+        text = text.replace(ch, "\\" + ch)
+    return text
 from collections import defaultdict
 
 BOT_TOKEN = "8643615168:AAH-V36MWb8FYQ7rQFJslax6i3K8NTEGdis"
@@ -379,6 +386,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
