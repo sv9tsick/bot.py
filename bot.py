@@ -190,10 +190,18 @@ class SmartNewsAnalyzer:
         Группировка новостей по "похожим" заголовкам через хеши.
         Возвращаем список групп: [ [group1], [group2], ... ].
         """
+        if not isinstance(raw_news, (list, tuple)):
+        print("⚠️ group_similar_news: raw_news не list/tuple:", type(raw_news), raw_news)
+            return []
+        
         groups = []
         hashes = []  # [hash1, hash2, ...]
 
         for item in raw_news:
+            if not isinstance(item, dict):
+            print("⚠️ group_similar_news: item не dict:", item, type(item))
+                continue
+            
             title = item.get("title", "") or ""
             text_hash = self.calc_text_hash(title)
 
@@ -405,6 +413,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
