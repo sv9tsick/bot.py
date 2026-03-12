@@ -186,37 +186,37 @@ class SmartNewsAnalyzer:
         return hashlib.md5(cleaned.encode("utf-8")).hexdigest()
 
     def group_similar_news(self, raw_news: list[dict]) -> list[list[dict]]:
-    """
-    Группировка новостей по "похожим" заголовкам через хеши.
-    Возвращаем список групп: [ [group1], [group2], ... ].
-    """
-    if not isinstance(raw_news, (list, tuple)):
-        print("⚠️ group_similar_news: raw_news не list/tuple:", type(raw_news), raw_news)
-        return []
+        """
+        Группировка новостей по "похожим" заголовкам через хеши.
+        Возвращаем список групп: [ [group1], [group2], ... ].
+        """
+        if not isinstance(raw_news, (list, tuple)):
+            print("⚠️ group_similar_news: raw_news не list/tuple:", type(raw_news), raw_news)
+            return []
 
-    groups = []
-    hashes = []
+        groups = []
+        hashes = []
 
-    for item in raw_news:
-        if not isinstance(item, dict):
-            print("⚠️ group_similar_news: item не dict:", item, type(item))
-            continue
+        for item in raw_news:
+            if not isinstance(item, dict):
+                print("⚠️ group_similar_news: item не dict:", item, type(item))
+                continue
 
-        title = item.get("title", "") or ""
-        text_hash = self.calc_text_hash(title)
+            title = item.get("title", "") or ""
+            text_hash = self.calc_text_hash(title)
 
-        matched = False
-        for i, h in enumerate(hashes):
-            if h == text_hash:
-                groups[i].append(item)
-                matched = True
-                break
+            matched = False
+            for i, h in enumerate(hashes):
+                if h == text_hash:
+                    groups[i].append(item)
+                    matched = True
+                    break
 
-        if not matched:
-            hashes.append(text_hash)
-            groups.append([item])
+            if not matched:
+                hashes.append(text_hash)
+                groups.append([item])
 
-    return groups
+        return groups
 
 async def fetch_news(analyzer: SmartNewsAnalyzer) -> list[dict]:
     now = datetime.now()
@@ -412,6 +412,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
