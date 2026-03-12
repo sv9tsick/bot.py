@@ -1,21 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-Умный Telegram-бот для агрегации новостей v2.0
-С семантическим анализом и сравнением источников
+Умный Telegram-бот v2.0 Lite для Railway
+RSS без sentence_transformers/torch
 """
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, CallbackContext
+from telegram.ext import Application, CommandHandler, ContextTypes
 import feedparser
 import hashlib
 from datetime import datetime, timedelta
 import asyncio
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 import re
+from collections import defaultdict
 
-# ========== КОНФИГУРАЦИЯ ==========
 BOT_TOKEN = "8643615168:AAH-V36MWb8FYQ7rQFJslax6i3K8NTEGdis"
 
 NEWS_SOURCES = {
@@ -163,677 +160,206 @@ NEWS_SOURCES = {
 }
 
 NEWS_LOOKBACK_HOURS = 3
-SIMILARITY_THRESHOLD = 0.70
 MAX_NEWS_PER_MESSAGE = 10
-AUTO_SEND_INTERVAL_HOURS = 2  # авторассылка каждые 2 часа
+AUTO_SEND_INTERVAL_HOURS = 2
 
-# Какие категории нам интересны
-ALLOWED_CATEGORIES = {
-    '💰 Криптовалюты',
-    '📈 Экономика',
-    '⚔️ Конфликты',
-    '🏛️ Политика',
-}
 
 class SmartNewsAnalyzer:
     def __init__(self):
-        print("🧠 Lite анализатор (без ML)")
-    
+        print("🧠 Lite анализатор (hash заголовков)")
+        self.threshold = 0.9  # условный порог для "похожих" заголовков
+
     def clean_text(self, text):
-        import re
-        text = re.sub('<[^<]+?>', '', text)
-        return ' '.join(text.split())[:100]
-    
-    def group_similar_news(self, news_list):
-        from collections import defaultdict
-        groups = defaultdict(list)
-        
-        for news in news_list:
-            title_key = self.clean_text(news['title'])
-            groups[title_key].append(news)
-        
-        grouped = []
-        for title, sources in groups.items():
-            grouped.append({
-                'main_news': sources[0],
-                'sources': sources,
-                'similarity_count': len(sources)
-            })
-        return sorted(grouped, key=lambda x: x['similarity_count'], reverse=True)[:20]
-    
-        print(f"🔍 Анализирую {len(news_list)} новостей на схожесть...")
-
-        texts = []
-        for item in news_list:
-            title = self.clean_text(item['title'])
-            desc = self.clean_text(item.get('description', ''))
-            combined = f"{title}. {desc[:200]}"
-            texts.append(combined)
-
-        embeddings = self.model.encode(texts, show_progress_bar=False)
-        similarity_matrix = cosine_similarity(embeddings)
-
-        grouped = []
-        used_indices = set()
-
-        for i in range(len(news_list)):
-            if i in used_indices:
-                continue
-
-            similar_indices = np.where(similarity_matrix[i] >= self.threshold)[0]
-
-            group = {
-                'main_news': news_list[i],
-                'sources': [],
-                'similarity_count': len(similar_indices)
-            }
-
-            for idx in similar_indices:
-                if idx not in used_indices:
-                    news = news_list[idx]
-                    group['sources'].append({
-                        'name': news['source'],
-                        'title': news['title'],
-                        'description': news.get('description', ''),
-                        'link': news['link'],
-                        'region': self.detect_region(news['source'])
-                    })
-                    used_indices.add(idx)
-
-            group['sources'].sort(key=lambda x: x['region'])
-            grouped.append(group)
-
-        print(f"✅ Сгруппировано в {len(grouped)} уникальных событий\n")
-        grouped.sort(key=lambda x: x['similarity_count'], reverse=True)
-        return grouped
-
-    def detect_region(self, source_name):
-        s = source_name.lower()
-
-        if any(x in s for x in ['bbc', 'guardian', 'reuters', 'cnn', 'fox']):
-            return '🇬🇧🇺🇸 Запад'
-        elif any(x in s for x in ['rbc', 'lenta', 'tass', 'коммерсант', 'meduza']):
-            return '🇷🇺 Россия'
-        elif any(x in s for x in ['onliner', 'naviny']):
-            return '🇧🇾 Беларусь'
-        elif 'jazeera' in s:
-            return '🌍 Ближний Восток'
-        elif 'coin' in s or 'crypto' in s or 'bitcoin' in s:
-            return '₿ Крипто'
-        else:
-            return '🌐 Международные'
-
-    def categorize_news(self, text):
-        """Определяет категорию новости по многоязычным ключевым словам"""
-        t = text.lower()
-        categories = []
-
-        # 💰 КРИПТОВАЛЮТЫ
-        crypto_words = [
-            'bitcoin', 'crypto', 'cryptocurrency', 'blockchain', 'ethereum',
-            'btc', 'eth', 'altcoin', 'stablecoin', 'defi', 'nft',
-            'криптовалюта', 'крипта', 'биткоин', 'эфириум', 'блокчейн',
-            'criptomoneda', 'criptomoeda', 'criptomonedas', 'criptos',
-            'criptografía', 'kryptowährung', 'krypto', 'monnaie virtuelle',
-        ]
-        if any(w in t for w in crypto_words):
-            categories.append('💰 Криптовалюты')
-
-        # 📈 ЭКОНОМИКА
-        economy_words = [
-            'economy', 'economic', 'gdp', 'inflation', 'recession',
-            'interest rate', 'interest rates', 'stock market', 'stocks',
-            'bond yield', 'unemployment', 'trade deficit', 'trade surplus',
-            'экономика', 'экономический', 'ввп', 'инфляция', 'рецессия',
-            'ставка цб', 'ключевая ставка', 'процентная ставка',
-            'фондовый рынок', 'акции', 'облигации', 'безработица',
-            'торговый баланс', 'торговый дефицит',
-            'wirtschaft', 'konjunktur', 'rezession', 'inflation',
-            'bruttoinlandsprodukt', 'arbeitslosigkeit', 'zinssatz',
-            'economía', 'economico', 'económico', 'recesión', 'inflación',
-            'desempleo', 'tasa de interés', 'mercado bursátil',
-            'economia', 'recessão', 'desemprego', 'taxa de juros',
-            'économie', 'économique', 'récession', 'chômage',
-            'taux d\'intérêt', 'marché boursier',
-        ]
-        if any(w in t for w in economy_words):
-            categories.append('📈 Экономика')
-
-        # ⚔️ КОНФЛИКТЫ / ВОЙНА
-        conflict_words = [
-            'war', 'conflict', 'clashes', 'shelling', 'airstrike',
-            'offensive', 'counteroffensive', 'frontline', 'military operation',
-            'troops', 'forces', 'army', 'drone strike', 'missile strike',
-            'война', 'военный конфликт', 'конфликт', 'боевые действия',
-            'обстрел', 'обстрелы', 'ракетный удар', 'удар дроном',
-            'контрнаступление', 'наступление', 'линия фронта', 'фронт',
-            'военная операция', 'мобилизация', 'армия', 'вооруженные силы',
-            'війна', 'обстрiл', 'ракетний удар', 'контрнаступ',
-            'krieg', 'konflikt', 'militärisch', 'frontlinie', 'luftangriff',
-            'guerra', 'conflicto', 'ataque con misiles', 'ofensiva',
-            'guerra civil', 'forças armadas', 'conflito armado',
-            'guerre', 'conflit', 'frappe de missile', 'offensive militaire',
-        ]
-        if any(w in t for w in conflict_words):
-            categories.append('⚔️ Конфликты')
-
-        # 🏛️ ПОЛИТИКА
-        politics_words = [
-            'president', 'prime minister', 'government', 'parliament',
-            'election', 'elections', 'vote', 'voting', 'coalition',
-            'opposition', 'sanction', 'sanctions', 'diplomatic', 'referendum',
-            'party leader', 'democrats', 'republicans', 'congress',
-            'президент', 'премьер-министр', 'премьер министр',
-            'правительство', 'парламент', 'сенат', 'дума',
-            'выборы', 'голосование', 'референдум', 'коалиция',
-            'оппозиция', 'санкции', 'санкция', 'дипломатия',
-            'политическая партия', 'партия власти',
-            'президент україни', 'верховна рада', 'уряд україни',
-            'präsident', 'bundeskanzler', 'regierung', 'bundestag',
-            'wahl', 'wahlen', 'koalition', 'opposition', 'sanktionen',
-            'presidente', 'primer ministro', 'gobierno', 'parlamento',
-            'elección', 'elecciones', 'votación', 'coalición', 'oposición',
-            'sanciones', 'governo', 'parlamento', 'eleições', 'votação',
-            'président', 'premier ministre', 'gouvernement', 'parlement',
-            'élection', 'élections', 'vote', 'coalition', 'opposition',
-            'sanctions',
-        ]
-        if any(w in t for w in politics_words):
-            categories.append('🏛️ Политика')
-
-        return categories if categories else ['📰 Общее']
-
-
-
-
-class AdvancedNewsParser:
-    def __init__(self, sources):
-        self.sources = sources
-
-    def fetch_news(self, hours_back=3):
-        all_news = []
-        cutoff_time = datetime.now() - timedelta(hours=hours_back)
-
-        print(f"🔍 Собираю новости за последние {hours_back} часов из {len(self.sources)} источников...")
-        success_count = 0
-
-        for source_name, rss_url in self.sources.items():
-            # 1) проверяем, что это строка‑URL
-            if not isinstance(rss_url, str):
-                print(f"   ❌ {source_name}: некорректный URL (ожидаю строку, а получил {type(rss_url)})")
-                continue
-
-            try:
-                feed = feedparser.parse(rss_url)
-                source_news_count = 0
-
-                for entry in feed.entries:
-                    pub_date = None
-                    if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                        pub_date = datetime(*entry.published_parsed[:6])
-                    elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                        pub_date = datetime(*entry.updated_parsed[:6])
-                    else:
-                        pub_date = datetime.now()
-
-                    if pub_date < cutoff_time:
-                        continue
-
-                    description = ''
-                    if hasattr(entry, 'summary'):
-                        description = entry.summary
-                    elif hasattr(entry, 'description'):
-                        description = entry.description
-
-                                        # Аккуратно достаём ссылку
-                    link = getattr(entry, "link", None)
-
-                    # Если link — словарь (Atom: {'href': '...'}), вытаскиваем href
-                    if isinstance(link, dict):
-                        link = link.get("href") or link.get("url")
-
-                    # Если ссылки нет вообще — пробуем id
-                    if not link and hasattr(entry, "id"):
-                        link = entry.id
-
-                    # В крайнем случае просто приводим к строке
-                    link_str = str(link) if link is not None else ""
-
-                    if not link_str:
-                        # Совсем без ссылки и id — пропускаем такую новость
-                        continue
-
-                    news_id = hashlib.md5(link_str.encode("utf-8", errors="ignore")).hexdigest()
-
-                    news_item = {
-                        "id": news_id,
-                        "source": source_name,
-                        "title": entry.title,
-                        "description": description,
-                        "link": link_str,
-                        "published": pub_date,
-                    }
-
-
-                    all_news.append(news_item)
-                    source_news_count += 1
-
-                if source_news_count > 0:
-                    print(f"   ✅ {source_name}: {source_news_count} новостей")
-                    success_count += 1
-
-            except Exception as e:
-                print(f"   ❌ {source_name}: ошибка - {str(e)[:50]}")
-
-        print(f"\n✅ Успешно: {success_count}/{len(self.sources)} источников")
-        print(f"📰 Всего собрано: {len(all_news)} новостей\n")
-
-        all_news.sort(key=lambda x: x['published'], reverse=True)
-        return all_news
-
-
-class SmartNewsBot:
-    def __init__(self, token):
-        self.token = token
-        self.parser = AdvancedNewsParser(NEWS_SOURCES)
-        self.analyzer = SmartNewsAnalyzer()
-        print("🤖 Умный бот готов к работе!\n")
-        self.subscribers = set()      # чат‑ID пользователей, подписанных на рассылку
-        self.last_sent_ids = set()    # ID новостей, которые уже отправляли в авторассылке
-        self.last_groups = {}   # chat_id -> список сгруппированных событий
-        self.last_index = {}    # chat_id -> с какого индекса выдавать дальше
-
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_chat.id
-        self.subscribers.add(user_id)
-
-        welcome_text = (
-            "🤖 *Привет! Я умный бот-агрегатор новостей v2.0!*\n\n"
-            "🎯 *Мои возможности:*\n"
-            "• Собираю новости из 20+ источников\n"
-            "• Умею сравнивать, как разные СМИ освещают события\n"
-            "• Группирую похожие новости по смыслу\n\n"
-            "📂 *Категории:*\n"
-            "🏛️ Политика | 📈 Экономика\n"
-            "💰 Криптовалюты | ⚔️ Конфликты\n\n"
-            "*Команды:*\n"
-            "/news - Последние новости\n"
-            "/sources - Список источников\n"
-            "/subscribe - Подписаться на авторассылку\n"
-            "/unsubscribe - Отписаться от авторассылки\n"
-            "/help - Справка\n\n"
-            "➡️ /more - Показать следующие новости из последнего запроса\n"
-            f"✅ Ты подписан на авторассылку каждые {AUTO_SEND_INTERVAL_HOURS} часа!"
-        )
-
-        await update.message.reply_text(welcome_text, parse_mode='Markdown')
-        print(f"👤 Новый пользователь: {update.effective_user.first_name} (ID: {user_id})")
-
-
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self.start_command(update, context)
-
-    async def sources_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        by_region = {}
-        for source in NEWS_SOURCES.keys():
-            region = self.analyzer.detect_region(source)
-            by_region.setdefault(region, []).append(source)
-
-        text = "📋 *Мои источники новостей:*\n\n"
-        for region, sources in sorted(by_region.items()):
-            text += f"*{region}*\n"
-            for source in sources:
-                text += f"  • {source}\n"
-            text += "\n"
-
-        text += f"📊 *Всего источников:* {len(NEWS_SOURCES)}"
-        await update.message.reply_text(text, parse_mode='Markdown')
-
-    def filter_groups_by_categories(self, grouped_news):
-        """Оставляет только события с нужными категориями"""
-        filtered = []
-
-        for group in grouped_news:
-            main = group['main_news']
-            text = main['title'] + ' ' + main.get('description', '')
-            categories = self.analyzer.categorize_news(text)
-
-            # если хотя бы одна категория из нужных — оставляем
-            if any(cat in ALLOWED_CATEGORIES for cat in categories):
-                filtered.append(group)
-
-        return filtered
-
-
-    async def subscribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Подписаться на авторассылку"""
-        user_id = update.effective_chat.id
-        self.subscribers.add(user_id)
-        await update.message.reply_text(
-            f"✅ Ты подписан на авторассылку.\n"
-            f"Каждые {AUTO_SEND_INTERVAL_HOURS} часа буду присылать подборку событий."
-        )
-
-    async def unsubscribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отписаться от авторассылки"""
-        user_id = update.effective_chat.id
-        if user_id in self.subscribers:
-            self.subscribers.remove(user_id)
-            await update.message.reply_text("❌ Ты отписан от авторассылки.")
-        else:
-            await update.message.reply_text("ℹ️ Ты и так не подписан на авторассылку.")
-
-
-    async def news_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_name = update.effective_user.first_name
-        print(f"\n📨 {user_name} запросил новости")
-
-        status_msg = await update.message.reply_text(
-            "🔄 Собираю свежие новости...\n"
-            "⏳ Это займёт 10–15 секунд"
-        )
-
-        try:
-            raw_news = self.parser.fetch_news(hours_back=NEWS_LOOKBACK_HOURS)
-
-            if not raw_news:
-                await status_msg.edit_text(
-                    "😔 Свежих новостей пока нет\n\n"
-                    "Попробуй позже!"
-                )
-                return
-
-            await status_msg.edit_text(
-                f"🧠 Нашёл {len(raw_news)} новостей!\n"
-                f"Анализирую и группирую..."
-            )
-
-            grouped_news = self.analyzer.group_similar_news(raw_news)
-
-            await status_msg.edit_text(
-                f"✅ Готово! Найдено {len(grouped_news)} событий\n"
-                f"Отправляю..."
-            )
-
-            grouped_news = self.analyzer.group_similar_news(raw_news)
-            # если фильтруешь по темам – оставь эту строку
-            # grouped_news = self.filter_groups_by_categories(grouped_news)
-
-            if not grouped_news:
-                await status_msg.edit_text(
-                    "😊 Свежие новости есть, но ни одна не подходит под выбранные темы."
-                )
-                return
-
-            # сохраняем список и сбрасываем индекс для этого чата
-            chat_id = update.effective_chat.id
-            self.last_groups[chat_id] = grouped_news
-            self.last_index[chat_id] = 0
-
-            await status_msg.edit_text(
-                f"✅ Готово! Найдено {len(grouped_news)} событий\n"
-                f"Показываю первые {min(MAX_NEWS_PER_MESSAGE, len(grouped_news))}.\n"
-                f"Чтобы увидеть ещё, напиши /more"
-            )
-
-                        # Формируем первую страницу так, чтобы не было перекоса в один источник
-            per_source_limit = 3  # максимум событий от одного источника на страницу
-            selected = []
-            per_source_count = {}
-
-            for group in grouped_news:
-                main_source = group["main_news"]["source"]
-                count = per_source_count.get(main_source, 0)
-
-                if count >= per_source_limit:
-                    continue  # этот источник уже набрал лимит
-
-                selected.append(group)
-                per_source_count[main_source] = count + 1
-
-                if len(selected) >= MAX_NEWS_PER_MESSAGE:
+        text = re.sub('<[^<]+?>', '', str(text))
+        return ' '.join(text.split())[:100].lower()
+
+    def calc_text_hash(self, text: str) -> str:
+        """Простой хеш от очищенного текста."""
+        cleaned = self.clean_text(text)
+        return hashlib.md5(cleaned.encode("utf-8")).hexdigest()
+
+    def group_similar_news(self, raw_news: list[dict]) -> list[list[dict]]:
+        """
+        Группировка новостей по "похожим" заголовкам через хеши.
+        Возвращаем список групп: [ [group1], [group2], ... ].
+        """
+        groups = []
+        hashes = []  # [hash1, hash2, ...]
+
+        for item in raw_news:
+            title = item.get("title", "") or ""
+            text_hash = self.calc_text_hash(title)
+
+            # Сравниваем хеш с уже существующими (упрощённый вариант)
+            matched = False
+            for i, h in enumerate(hashes):
+                if h == text_hash:
+                    groups[i].append(item)
+                    matched = True
                     break
 
-            if not selected:
-                await status_msg.edit_text(
-                    "😊 Свежие новости есть, но ни одна не прошла фильтры для первой страницы."
-                )
-                return
+            if not matched:
+                hashes.append(text_hash)
+                groups.append([item])
 
-            news_to_send = selected
-            self.last_index[chat_id] = len(selected)
+        return groups
 
-            for i, group in enumerate(news_to_send, 1):
-                message = self.format_grouped_news(group, i, len(news_to_send))
-                try:
-                    await update.message.reply_text(
-                        message,
-                        parse_mode='HTML',
-                        disable_web_page_preview=False
-                    )
-                    await asyncio.sleep(0.7)
-                except Exception as e:
-                    print(f"❌ Ошибка отправки: {e}")
 
-            total_sources = sum(len(g['sources']) for g in news_to_send)
-            await update.message.reply_text(
-                f"✅ *Готово!*\n\n"
-                f"📰 Событий: {len(news_to_send)}\n"
-                f"📡 Источников задействовано: {total_sources}\n"
-                f"⏱️ За последние {NEWS_LOOKBACK_HOURS} часа\n\n"
-                f"💡 Хочешь больше? Отправь /news снова!",
-                parse_mode='Markdown'
-            )
+async def fetch_news(analyzer: SmartNewsAnalyzer) -> list[dict]:
+    """Парсинг всех источников и фильтрация по времени."""
+    now = datetime.now()
+    cutoff = now - timedelta(hours=NEWS_LOOKBACK_HOURS)
+    all_items = []
 
-            print(f"✅ Отправлено {len(news_to_send)} событий пользователю {user_name}\n")
-
-        except Exception as e:
-            await status_msg.edit_text(
-                f"❌ Произошла ошибка: {str(e)}\n\n"
-                f"Попробуй ещё раз через минуту"
-            )
-            print(f"❌ ОШИБКА: {e}")
-
-    async def more_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать следующую порцию новостей из последнего запроса"""
-        chat_id = update.effective_chat.id
-
-        if chat_id not in self.last_groups or chat_id not in self.last_index:
-            await update.message.reply_text(
-                "Пока нет сохранённого списка новостей.\n"
-                "Сначала отправь /news 🙂"
-            )
-            return
-
-        grouped_news = self.last_groups[chat_id]
-        idx = self.last_index[chat_id]
-
-        if idx >= len(grouped_news):
-            await update.message.reply_text(
-                "Ты уже посмотрел все события из последнего запроса.\n"
-                "Отправь /news, чтобы загрузить свежие."
-            )
-            return
-
-        end = min(idx + MAX_NEWS_PER_MESSAGE, len(grouped_news))
-        news_to_send = grouped_news[idx:end]
-
-        for i, group in enumerate(news_to_send, idx + 1):
-            message = self.format_grouped_news(group, i, len(grouped_news))
-            try:
-                await update.message.reply_text(
-                    message,
-                    parse_mode='HTML',
-                    disable_web_page_preview=False,
-                )
-                await asyncio.sleep(0.7)
-            except Exception as e:
-                print(f"❌ Ошибка отправки в /more: {e}")
-
-        self.last_index[chat_id] = end
-
-        await update.message.reply_text(
-            f"✅ Показаны события {idx + 1}–{end} из {len(grouped_news)}.\n"
-            "Чтобы увидеть ещё — снова /more, чтобы обновить список — /news."
-        )
-
-    async def periodic_news_job(self, context: CallbackContext):
-        """Периодическая рассылка новостей подписчикам (JobQueue)"""
-        if not self.subscribers:
-            print("⏭️  Нет подписчиков для авторассылки")
-            return
-
-        print(f"\n⏰ Запущена авторассылка для {len(self.subscribers)} подписчиков")
-
+    for src_name, rss_url in NEWS_SOURCES.items():
         try:
-            # Берём новости за последние N часов
-            raw_news = self.parser.fetch_news(hours_back=NEWS_LOOKBACK_HOURS)
+            feed = feedparser.parse(rss_url)
+            for entry in feed.entries:
+                # Берём дату публикации, если есть
+                published = None
+                if hasattr(entry, "published_parsed") and entry.published_parsed:
+                    published = datetime(*entry.published_parsed[:6])
+                elif hasattr(entry, "published") and entry.published:
+                    published = datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ")
+                else:
+                    published = now
 
-            if not raw_news:
-                print("📭 Свежих новостей нет, рассылка пропущена")
-                return
+                if published < cutoff:
+                    continue
 
-            # Оставляем только те, которые ещё не отправлялись в авторассылке
-            new_news = [n for n in raw_news if n['id'] not in self.last_sent_ids]
-
-            if not new_news:
-                print("📭 Все свежие новости уже были отправлены ранее")
-                return
-
-            grouped = self.analyzer.group_similar_news(new_news)
-            grouped = self.filter_groups_by_categories(grouped)
-
-            if not grouped:
-                print("📭 Есть свежие новости, но ни одной по нужным темам — авторассылка пропущена")
-                return
-
-            news_to_send = grouped[:MAX_NEWS_PER_MESSAGE]
-
-
-            # Отправляем каждому подписчику
-            for chat_id in list(self.subscribers):
-                try:
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=(
-                            "📬 *Автоматическая подборка новостей*\n\n"
-                            f"Событий: {len(news_to_send)} за последние {NEWS_LOOKBACK_HOURS} часа."
-                        ),
-                        parse_mode='Markdown'
-                    )
-
-                    for i, group in enumerate(news_to_send, 1):
-                        message = self.format_grouped_news(group, i, len(news_to_send))
-                        await context.bot.send_message(
-                            chat_id=chat_id,
-                            text=message,
-                            parse_mode='HTML',
-                            disable_web_page_preview=False
-                        )
-                        await asyncio.sleep(0.7)
-
-                    print(f"  ✅ Авторассылка отправлена пользователю {chat_id}")
-
-                except Exception as e:
-                    print(f"  ❌ Ошибка авторассылки пользователю {chat_id}: {e}")
-
-            # Помечаем новости как отправленные
-            for news in new_news:
-                self.last_sent_ids.add(news['id'])
-
-            # Чтобы set не разрастался бесконечно
-            if len(self.last_sent_ids) > 2000:
-                self.last_sent_ids = set(list(self.last_sent_ids)[-1000:])
-
-            print("✅ Авторассылка завершена\n")
-
+                all_items.append({
+                    "source": src_name,
+                    "title": entry.get("title", ""),
+                    "link": entry.get("link", ""),
+                    "published": published,
+                    "summary": entry.get("summary", ""),
+                })
         except Exception as e:
-            print(f"❌ Ошибка в periodic_news_job: {e}")
+            print(f"Ошибка парсинга {src_name}: {e}")
+
+    # Сортируем по времени
+    all_items.sort(key=lambda x: x["published"], reverse=True)
+    return all_items
 
 
-    def format_grouped_news(self, group, number, total):
-        main = group['main_news']
-        sources = group['sources']
-        source_count = len(sources)
+def format_news_list(group: list[dict]) -> str:
+    """Форматирует одну группу новостей в строку."""
+    if not group:
+        return ""
 
-        categories = self.analyzer.categorize_news(
-            main['title'] + ' ' + main.get('description', '')
-        )
-        category_str = ' '.join(categories[:2])
+    first = group[0]
+    lines = [
+        f"📰 *{first['title']}*",
+        f"📍 Источник: {first['source']}",
+        f"⏰ {first['published'].strftime('%Y-%m-%d %H:%M')}",
+    ]
+    if first["summary"]:
+        lines.append(f"📝 {first['summary'][:200]}...")
 
-        message = f"📰 <b>Событие {number}/{total}</b> {category_str}\n"
-        message += f"{'='*40}\n\n"
-        message += f"<b>{main['title']}</b>\n\n"
+    if len(group) > 1:
+        lines.append(f"\n📋 *Другие источники по теме ({len(group) - 1}):*")
+        for i, item in enumerate(group[1:], start=2):
+            lines.append(f"{i}. {item['source']} → {item['link']}")
 
-        if source_count > 1:
-            message += f"📊 <b>Освещение в {source_count} источниках:</b>\n\n"
+    lines.append(f"\n🔗 {first['link']}")
+    return "\n".join(lines)
 
-            by_region = {}
-            for src in sources:
-                by_region.setdefault(src['region'], []).append(src)
 
-            for region, region_sources in sorted(by_region.items()):
-                message += f"<b>{region}:</b>\n"
-                for src in region_sources:
-                    desc = self.analyzer.clean_text(src['description'])
-                    if len(desc) > 150:
-                        desc = desc[:150] + "..."
-                    if desc:
-                        message += f"  • <i>{src['name']}</i>: {desc}\n"
-                    else:
-                        message += f"  • <i>{src['name']}</i>: {src['title'][:100]}\n"
-                message += "\n"
+async def send_grouped_news(context: ContextTypes.DEFAULT_TYPE, chat_id: int, groups: list[list[dict]]):
+    """Отправка сгруппированных новостей в Telegram."""
+    for i, group in enumerate(groups):
+        if not group:
+            continue
 
-            message += f"🔗 <b>Читать подробнее:</b>\n"
-            for src in sources[:3]:
-                message += f"  • <a href='{src['link']}'>{src['name']}</a>\n"
-        else:
-            desc = self.analyzer.clean_text(main.get('description', ''))
-            if len(desc) > 250:
-                desc = desc[:250] + "..."
-            if desc:
-                message += f"{desc}\n\n"
-            message += f"🌐 Источник: <i>{main['source']}</i>\n"
-            message += f"🔗 <a href='{main['link']}'>Читать полностью</a>"
+        text = format_news_list(group)[:3500]  # ограничение по длине сообщения
+        if text:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode="Markdown",
+                )
+                await asyncio.sleep(0.5)  # чтобы не упираться в лимиты Telegram
+            except Exception as e:
+                print(f"Ошибка отправки сообщения: {e}")
 
-        return message
 
-import os
-import asyncio
-from telegram.ext import Application
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    await update.message.reply_text("🤖 Бот запущен.\nЖду команду /news для получения последних новостей.")
 
-async def main():
-    bot = SmartNewsBot(BOT_TOKEN)
-    
-    # Создаём app
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Все ваши handlers
-    application.add_handler(CommandHandler("start", bot.start_command))
-    application.add_handler(CommandHandler("help", bot.help_command))
-    application.add_handler(CommandHandler("news", bot.news_command))
-    application.add_handler(CommandHandler("sources", bot.sources_command))
-    application.add_handler(CommandHandler("subscribe", bot.subscribe_command))
-    application.add_handler(CommandHandler("unsubscribe", bot.unsubscribe_command))
-    application.add_handler(CommandHandler("more", bot.more_command))
-    
-    # JobQueue для авторассылки работает!
-    job_queue = application.job_queue
-    job_queue.run_repeating(
-        bot.periodic_news_job,
+    analyzer = SmartNewsAnalyzer()
+    raw_news = await fetch_news(analyzer)
+    groups = analyzer.group_similar_news(raw_news)
+
+    if not groups:
+        await context.bot.send_message(chat_id=chat_id, text="Новых новостей за последние часы нет.")
+        return
+
+    # Разбиваем на группы по MAX_NEWS_PER_MESSAGE
+    chunked = []
+    current = []
+    for g in groups:
+        current.append(g)
+        if len(current) >= MAX_NEWS_PER_MESSAGE:
+            chunked.append(current)
+            current = []
+    if current:
+        chunked.append(current)
+
+    # Транслируем по чанкам
+    for chunk in chunked:
+        await send_grouped_news(context, chat_id, chunk)
+        await asyncio.sleep(1)
+
+
+async def auto_news_job(context: ContextTypes.DEFAULT_TYPE):
+    """Фоновый job — отправка сводки по расписанию."""
+    chat_ids = {update.effective_chat.id}  # тут нужно хранить актуальные chat_id (например, в БД или set)
+    analyzer = SmartNewsAnalyzer()
+    raw_news = await fetch_news(analyzer)
+    groups = analyzer.group_similar_news(raw_news)
+
+    if not groups:
+        return
+
+    for chat_id in chat_ids:
+        chunked = []
+        current = []
+        for g in groups:
+            current.append(g)
+            if len(current) >= MAX_NEWS_PER_MESSAGE:
+                chunked.append(current)
+                current = []
+        if current:
+            chunked.append(current)
+
+        for chunk in chunked:
+            await send_grouped_news(context, chat_id, chunk)
+            await asyncio.sleep(1)
+
+
+async def setup_jobs(application: Application):
+    application.job_queue.run_repeating(
+        auto_news_job,
         interval=timedelta(hours=AUTO_SEND_INTERVAL_HOURS),
-        first=timedelta(minutes=2),
-        name="periodic_news"
-    )
-    
-if __name__ == '__main__':
-    import os
-    PORT = int(os.environ.get('PORT', 8080))
-    webhook_url = "botpy-production-e175.up.railway.app/webhook"  # ВАШ URL!
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="webhook",
-        webhook_url=webhook_url
+        first=timedelta(minutes=1),
     )
 
+
+def main():
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("news", start_command))  # quick alias
+
+    application.job_queue.scheduler.add_listener(
+        setup_jobs,
+        application.job_queue.StartedEvent,
+    )
+
+    application.run_polling()
+
+
+if __name__ == "__main__":
+    main()
