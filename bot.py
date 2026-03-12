@@ -336,9 +336,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def auto_news_job(context: ContextTypes.DEFAULT_TYPE):
-    """Фоновый job — отправка сводки по расписанию."""
+    chat_id = context.bot_data.get("chat_id", None)
+    if chat_id is None:
+        return
+
     analyzer = SmartNewsAnalyzer()
     raw_news = await fetch_news(analyzer)
+
+    # 👇👇 ТА УЖЕ ПРОВЕРКА
+    print("AUTO: type(raw_news) =", type(raw_news))
+    if isinstance(raw_news, set):
+        print("⚠️ auto_news_job: raw_news — Set! Пропускаем...")
+        return
+
     groups = analyzer.group_similar_news(raw_news)
 
     if not groups:
@@ -387,6 +397,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
