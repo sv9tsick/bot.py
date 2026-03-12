@@ -353,9 +353,10 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("news", start_command))  # quick alias
 
-    application.job_queue.scheduler.add_listener(
-        setup_jobs,
-        application.job_queue.StartedEvent,
+    application.job_queue.run_repeating(
+        auto_news_job,
+        interval=timedelta(hours=AUTO_SEND_INTERVAL_HOURS),
+        first=timedelta(minutes=1),
     )
 
     application.run_polling()
@@ -363,3 +364,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
