@@ -372,12 +372,12 @@ async def auto_news_job(context: ContextTypes.DEFAULT_TYPE):
     chunked = []
     current = []
     for g in groups:
-            current.append(g)
+        current.append(g)
         if len(current) >= MAX_NEWS_PER_MESSAGE:
-                chunked.append(current)
-                current = []
-    if current:
             chunked.append(current)
+            current = []
+    if current:
+        chunked.append(current)
 
     for chunk in chunked:
         await send_grouped_news(context, chat_id, chunk)
@@ -412,6 +412,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
