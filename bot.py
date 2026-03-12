@@ -312,6 +312,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     analyzer = SmartNewsAnalyzer()
     raw_news = await fetch_news(analyzer)
+
+    # 👇👇 ПЕЧАТКА ТИПА
+    print("DEBUG: type(raw_news) =", type(raw_news))
+    if isinstance(raw_news, set):
+        print("⚠️ raw_news — Set! Первые 3 элемента:", list(raw_news)[:3])
+    else:
+        print("DEBUG: len(raw_news) =", len(raw_news))
+
     groups = analyzer.group_similar_news(raw_news)
 
     if not groups:
@@ -397,6 +405,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
