@@ -816,13 +816,13 @@ async def main():
         name="periodic_news"
     )
     
-    # Webhook на вашем домене (замените YOURDOMAIN.by)
-    await application.run_webhook(
-        listen="0.0.0.0",
-        port=8080,  # или из env PORT
-        url_path="webhook",  # секретный путь
-        webhook_url="https://capy.by/webhook"  # ваш домен + SSL!
-    )
-
 if __name__ == '__main__':
-    asyncio.run(main())
+    import os
+    PORT = int(os.environ.get('PORT', 8080))
+    webhook_url = "botpy-production-e175.up.railway.app/webhook"  # ВАШ URL!
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="webhook",
+        webhook_url=webhook_url
+    )
