@@ -177,20 +177,30 @@ ALLOWED_CATEGORIES = {
 
 class SmartNewsAnalyzer:
     def __init__(self):
-        print("🧠 Загружаю AI-модель для анализа текстов...")
-        self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-        print("✅ Модель загружена!\n")
-        self.threshold = SIMILARITY_THRESHOLD
-
+        print("🧠 Lite анализатор (без ML)")
+    
     def clean_text(self, text):
+        import re
         text = re.sub('<[^<]+?>', '', text)
-        text = ' '.join(text.split())
-        return text
-
+        return ' '.join(text.split())[:100]
+    
     def group_similar_news(self, news_list):
-        if not news_list:
-            return []
-
+        from collections import defaultdict
+        groups = defaultdict(list)
+        
+        for news in news_list:
+            title_key = self.clean_text(news['title'])
+            groups[title_key].append(news)
+        
+        grouped = []
+        for title, sources in groups.items():
+            grouped.append({
+                'main_news': sources[0],
+                'sources': sources,
+                'similarity_count': len(sources)
+            })
+        return sorted(grouped, key=lambda x: x['similarity_count'], reverse=True)[:20]
+    
         print(f"🔍 Анализирую {len(news_list)} новостей на схожесть...")
 
         texts = []
@@ -826,3 +836,4 @@ if __name__ == '__main__':
         url_path="webhook",
         webhook_url=webhook_url
     )
+
