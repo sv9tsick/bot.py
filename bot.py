@@ -337,7 +337,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def auto_news_job(context: ContextTypes.DEFAULT_TYPE):
     """Фоновый job — отправка сводки по расписанию."""
-    chat_ids = {update.effective_chat.id}  # тут нужно хранить актуальные chat_id (например, в БД или set)
     analyzer = SmartNewsAnalyzer()
     raw_news = await fetch_news(analyzer)
     groups = analyzer.group_similar_news(raw_news)
@@ -345,20 +344,19 @@ async def auto_news_job(context: ContextTypes.DEFAULT_TYPE):
     if not groups:
         return
 
-    for chat_id in chat_ids:
-        chunked = []
-        current = []
-        for g in groups:
+    chunked = []
+    current = []
+    for g in groups:
             current.append(g)
-            if len(current) >= MAX_NEWS_PER_MESSAGE:
+        if len(current) >= MAX_NEWS_PER_MESSAGE:
                 chunked.append(current)
                 current = []
-        if current:
+    if current:
             chunked.append(current)
 
-        for chunk in chunked:
-            await send_grouped_news(context, chat_id, chunk)
-            await asyncio.sleep(1)
+    for chunk in chunked:
+        await send_grouped_news(context, chat_id, chunk)
+        await asyncio.sleep(1)
 
 
 async def setup_jobs(application: Application):
@@ -386,6 +384,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
