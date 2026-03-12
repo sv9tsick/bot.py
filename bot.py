@@ -204,9 +204,7 @@ class SmartNewsAnalyzer:
 
         return groups
 
-
 async def fetch_news(analyzer: SmartNewsAnalyzer) -> list[dict]:
-    """Парсинг всех источников и фильтрация по времени."""
     now = datetime.now()
     cutoff = now - timedelta(hours=NEWS_LOOKBACK_HOURS)
     all_items = []
@@ -215,30 +213,38 @@ async def fetch_news(analyzer: SmartNewsAnalyzer) -> list[dict]:
         try:
             feed = feedparser.parse(rss_url)
             for entry in feed.entries:
-                # Берём дату публикации, если есть
                 published = None
+
+                # Пытаемся извлечь дату разными способами
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
                     published = datetime(*entry.published_parsed[:6])
                 elif hasattr(entry, "published") and entry.published:
-                    published = datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ")
+                    # Здесь нужно уметь парсить любой формат даты
+                    try:
+                        # стандартный ISO (если есть)
+                        published = datetime.strptime(
+                            entry.published, "%Y-%m-%dT%H:%M:%SZ"
+                        )
+                    except ValueError:
+                        try:
+                            # ещё один возможный формат (например, RSS‑style)
+                            published = datetime.strptime(
+                                entry.published, "%a, %d %b %Y %H:%M:%S %z"
+                            )
+                        except ValueError:
+                            # если не смогли разобрать — считаем, что дата слишком старая
+                            continue
                 else:
-                    published = now
+                    # если вообще нет даты — пропускаем
+                    continue
 
                 if published < cutoff:
                     continue
 
-                all_items.append({
-                    "source": src_name,
-                    "title": entry.get("title", ""),
-                    "link": entry.get("link", ""),
-                    "published": published,
-                    "summary": entry.get("summary", ""),
-                })
+                all_items.append({ ... })
         except Exception as e:
             print(f"Ошибка парсинга {src_name}: {e}")
 
-    # Сортируем по времени
-    all_items.sort(key=lambda x: x["published"], reverse=True)
     return all_items
 
 
@@ -364,4 +370,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
