@@ -221,19 +221,19 @@ async def fetch_news(analyzer: SmartNewsAnalyzer) -> list[dict]:
                 elif hasattr(entry, "published") and entry.published:
                     # Здесь нужно уметь парсить любой формат даты
                     try:
-                        # стандартный ISO (если есть)
-                        published = datetime.strptime(
-                            entry.published, "%Y-%m-%dT%H:%M:%SZ"
-                        )
+                        published = datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ")
                     except ValueError:
                         try:
-                            # ещё один возможный формат (например, RSS‑style)
-                            published = datetime.strptime(
-                                entry.published, "%a, %d %b %Y %H:%M:%S %z"
-                            )
+        # Обычный RFC‑822 / RSS-формат
+                           published = datetime.strptime(entry.published, "%a, %d %b %Y %H:%M:%S %z")
                         except ValueError:
-                            # если не смогли разобрать — считаем, что дата слишком старая
-                            continue
+                           try:
+            # Формат типа "Thursday Mar 12 2026 11:35:47"
+                               published = datetime.strptime(entry.published, "%A %b %d %Y %H:%M:%S")
+                           except ValueError:
+            # Если дата в неподдерживаемом формате — просто пропускаем
+                               continue
+
                 else:
                     # если вообще нет даты — пропускаем
                     continue
@@ -370,5 +370,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
