@@ -366,12 +366,14 @@ async def setup_jobs(application: Application):
         first=timedelta(minutes=1),
     )
 
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"❌ Ошибка в update: {update}, context.error: {context.error}")
 
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("news", start_command))  # quick alias
+    application.add_handler(CommandHandler("news", start_command))
 
     application.job_queue.run_repeating(
         auto_news_job,
@@ -379,11 +381,13 @@ def main():
         first=timedelta(minutes=1),
     )
 
-    application.run_polling()
+    application.add_error_handler(error_handler)
 
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
+
 
 
 
