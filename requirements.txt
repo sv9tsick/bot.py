@@ -1,0 +1,6 @@
+python-telegram-bot
+feedparser
+numpy
+scikit-learn
+sentence-transformers
+torch
