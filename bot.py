@@ -249,27 +249,30 @@ async def fetch_news(analyzer: SmartNewsAnalyzer) -> list[dict]:
 
 
 def format_news_list(group: list[dict]) -> str:
-    """Форматирует одну группу новостей в строку."""
     if not group:
         return ""
 
     first = group[0]
+    title = escape_markdown(first["title"])
+    summary = escape_markdown(first.get("summary", "")[:200])
+
     lines = [
-        f"📰 *{first['title']}*",
-        f"📍 Источник: {first['source']}",
+        f"📰 *{title}*",
+        f"📍 Источник: {escape_markdown(first['source'])}",
         f"⏰ {first['published'].strftime('%Y-%m-%d %H:%M')}",
     ]
-    if first["summary"]:
-        lines.append(f"📝 {first['summary'][:200]}...")
+    if summary:
+        lines.append(f"📝 {summary}...")
 
     if len(group) > 1:
         lines.append(f"\n📋 *Другие источники по теме ({len(group) - 1}):*")
         for i, item in enumerate(group[1:], start=2):
-            lines.append(f"{i}. {item['source']} → {item['link']}")
+            lines.append(
+                f"{i}. {escape_markdown(item['source'])} → {escape_markdown(item['link'])}"
+            )
 
-    lines.append(f"\n🔗 {first['link']}")
+    lines.append(f"\n🔗 {escape_markdown(first['link'])}")
     return "\n".join(lines)
-
 
 async def send_grouped_news(context: ContextTypes.DEFAULT_TYPE, chat_id: int, groups: list[list[dict]]):
     """Отправка сгруппированных новостей в Telegram."""
@@ -370,6 +373,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
